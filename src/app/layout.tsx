@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -32,8 +33,8 @@ export default function RootLayout({
               <span className="font-medium">Rendez-vous Parents–Professeurs</span>
             </div>
             <nav className="text-sm text-gray-600 hidden sm:flex gap-4">
-              <a href="/" className="hover:text-gray-900">Accueil</a>
-              <a href="/dashboard" className="hover:text-gray-900">Tableau de bord</a>
+              <Link href="/" className="hover:text-gray-900">Accueil</Link>
+              <Link href="/dashboard" className="hover:text-gray-900">Tableau de bord</Link>
             </nav>
           </div>
         </header>

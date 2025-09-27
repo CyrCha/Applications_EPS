@@ -57,11 +57,11 @@ function baseClasses(variant: Variant, size: Size) {
 }
 
 export function Button(props: ButtonProps) {
-  const { variant = "primary", size = "md", className, children, ...rest } = props as any;
+  const { variant = "primary", size = "md", className, children } = props;
   const classes = cn(baseClasses(variant, size), className);
 
   if ("href" in props && props.href) {
-    const { href, prefetch, target, rel, onClick } = props as ButtonAsLink;
+    const { href, prefetch, target, rel, onClick } = props;
     return (
       <Link href={href} prefetch={prefetch} target={target} rel={rel} className={classes} onClick={onClick}>
         {children}
@@ -69,7 +69,7 @@ export function Button(props: ButtonProps) {
     );
   }
 
-  const buttonProps = rest as React.ButtonHTMLAttributes<HTMLButtonElement>;
+  const { href: _h, ...buttonProps } = props as ButtonAsButton;
   return (
     <button {...buttonProps} className={classes}>
       {children}

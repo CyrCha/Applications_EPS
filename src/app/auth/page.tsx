@@ -30,8 +30,9 @@ export default function AuthPage() {
       setMessage(
         "Un lien magique vous a été envoyé par e-mail. Veuillez vérifier votre boîte de réception."
       );
-    } catch (err: any) {
-      setError(err.message ?? "Une erreur est survenue");
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message);
+      else setError("Une erreur est survenue");
     } finally {
       setLoading(false);
     }

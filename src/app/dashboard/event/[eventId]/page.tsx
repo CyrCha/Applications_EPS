@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
@@ -24,6 +23,7 @@ type SlotRow = {
   id: string;
   starts_at: string;
   ends_at: string;
+  window_id?: string | null;
 };
 
 type BookingRow = {
@@ -98,7 +98,7 @@ export default function ManageEventPage() {
         // Load slots
         const { data: s, error: sErr } = await supabase
           .from("time_slots")
-          .select("id, starts_at, ends_at")
+          .select("id, starts_at, ends_at, window_id")
           .eq("event_id", eventId)
           .order("starts_at", { ascending: true });
         if (sErr) throw sErr;
@@ -145,9 +145,9 @@ export default function ManageEventPage() {
           setEditEnd(e.toTimeString().slice(0,5));
         }
         setEditDuration(ev.slot_duration_minutes ?? 10);
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!mounted) return;
-        setError(err.message ?? "Erreur de chargement");
+        setError(err instanceof Error ? err.message : "Erreur de chargement");
       } finally {
         if (mounted) setLoading(false);
       }
@@ -208,8 +208,8 @@ export default function ManageEventPage() {
       const { error } = await supabase.from('events').delete().eq('id', event.id);
       if (error) throw error;
       router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.message ?? "Erreur lors de la suppression");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur lors de la suppression");
     } finally {
       setBusy(false);
     }
@@ -252,8 +252,8 @@ export default function ManageEventPage() {
       }
 
       router.push(`/dashboard/event/${newEventId}`);
-    } catch (err: any) {
-      setError(err.message ?? 'Erreur lors de la duplication');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erreur lors de la duplication');
     } finally {
       setBusy(false);
     }
@@ -313,13 +313,13 @@ export default function ManageEventPage() {
       // Refresh after regeneration
       const { data: s } = await supabase
         .from("time_slots")
-        .select("id, starts_at, ends_at")
+        .select("id, starts_at, ends_at, window_id")
         .eq("event_id", event.id)
         .order("starts_at", { ascending: true });
       setSlots((s ?? []) as SlotRow[]);
       setBookings([]);
-    } catch (err: any) {
-      setError(err.message ?? 'Erreur lors de la régénération des créneaux');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erreur lors de la régénération des créneaux');
     } finally {
       setBusy(false);
     }
@@ -336,7 +336,7 @@ export default function ManageEventPage() {
       // refresh view
       const { data: s } = await supabase
         .from("time_slots")
-        .select("id, starts_at, ends_at")
+        .select("id, starts_at, ends_at, window_id")
         .eq("event_id", eventId)
         .order("starts_at", { ascending: true });
       setSlots((s ?? []) as SlotRow[]);
@@ -346,8 +346,8 @@ export default function ManageEventPage() {
         .select("id, slot_id, parent_email, parent_name, created_at")
         .in("slot_id", slotIds);
       setBookings((b ?? []) as BookingRow[]);
-    } catch (err: any) {
-      setError(err.message ?? "Erreur lors de l'annulation");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur lors de l'annulation");
     } finally {
       setBusy(false);
     }
@@ -381,7 +381,7 @@ export default function ManageEventPage() {
       setBusy(true);
       const startsIso = combineDateTime(editDate, editStart);
       const endsIso = combineDateTime(editDate, editEnd);
-      const payload: any = {
+      const payload: Partial<Omit<EventRow, 'id' | 'teacher_id'>> = {
         title: editTitle,
         description: editDescription,
         location: editLocation,
@@ -397,8 +397,8 @@ export default function ManageEventPage() {
       if (upErr) throw upErr;
 
       setEvent({ ...event, ...payload });
-    } catch (err: any) {
-      setError(err.message ?? "Erreur lors de l'enregistrement");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur lors de l'enregistrement");
     } finally {
       setBusy(false);
     }
@@ -482,8 +482,8 @@ export default function ManageEventPage() {
 
       // reset form
       setNewWinDate(""); setNewWinStart(""); setNewWinEnd(""); setNewWinDur(10);
-    } catch (err: any) {
-      setError(err.message ?? "Erreur lors de l'ajout de la date");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur lors de l'ajout de la date");
     } finally {
       setBusy(false);
     }
@@ -510,12 +510,12 @@ export default function ManageEventPage() {
       }
       const { data: s } = await supabase
         .from("time_slots")
-        .select("id, starts_at, ends_at")
+        .select("id, starts_at, ends_at, window_id")
         .eq("event_id", win.event_id)
         .order("starts_at", { ascending: true });
       setSlots((s ?? []) as SlotRow[]);
-    } catch (err: any) {
-      setError(err.message ?? "Erreur lors de la régénération");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur lors de la régénération");
     } finally {
       setBusy(false);
     }
@@ -594,41 +594,170 @@ export default function ManageEventPage() {
           {slots.length === 0 ? (
             <p className="text-sm text-gray-600">Aucun créneau.</p>
           ) : (
-            <ul className="space-y-2">
-              {slots.map((s) => {
-                const bk = bySlot.get(s.id);
-                return (
-                  <li
-                    key={s.id}
-                    className="flex items-center justify-between border rounded-md p-3"
-                  >
-                    <div>
-                      <div className="font-medium">
-                        {new Date(s.starts_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        {" - "}
-                        {new Date(s.ends_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </div>
-                      {bk ? (
-                        <div className="text-xs text-gray-700">
-                          Réservé par {bk.parent_name || "(Nom non fourni)"} &lt;{bk.parent_email}&gt; — {new Date(bk.created_at).toLocaleString()}
+            (() => {
+              // Group by window when possible, else by date
+              const byWindow = new Map<string, SlotRow[]>();
+              const fallbacks: SlotRow[] = [];
+              for (const s of slots) {
+                if (s.window_id) {
+                  const arr = byWindow.get(s.window_id) ?? [];
+                  arr.push(s);
+                  byWindow.set(s.window_id, arr);
+                } else {
+                  fallbacks.push(s);
+                }
+              }
+              const winById = new Map(windows.map(w => [w.id, w] as const));
+
+              return (
+                <div className="space-y-6">
+                  {[...byWindow.entries()]
+                    .map(([winId, items]) => ({
+                      winId,
+                      items: items.slice().sort((a,b)=> new Date(a.starts_at).getTime()-new Date(b.starts_at).getTime()),
+                      startAt: (() => {
+                        const w = winById.get(winId);
+                        return new Date(w ? w.starts_at : items[0].starts_at).getTime();
+                      })(),
+                    }))
+                    .sort((a,b)=> a.startAt - b.startAt)
+                    .map(({ winId, items }) => {
+                      const w = winById.get(winId);
+                      const dateLabel = w ? new Date(w.starts_at).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit' }) : new Date(items[0].starts_at).toLocaleDateString();
+                      const startLabel = w ? new Date(w.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(items[0].starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      const endLabel = w ? new Date(w.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(items[items.length-1].ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      const dur = w?.slot_duration_minutes;
+                      const reservedCount = items.reduce((acc, s) => acc + (bySlot.get(s.id) ? 1 : 0), 0);
+                      const ratio = reservedCount / items.length;
+                      const badgeClass = ratio >= 0.67
+                        ? 'bg-red-100 text-red-700 border-red-200'
+                        : ratio >= 0.34
+                        ? 'bg-orange-100 text-orange-700 border-orange-200'
+                        : 'bg-green-100 text-green-700 border-green-200';
+                      return (
+                        <div key={winId} className="space-y-2">
+                          <h3 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                            <span>
+                              {dateLabel} — {startLabel} → {endLabel}{dur ? ` — ${dur} min` : ''}
+                            </span>
+                            <span className={`inline-flex items-center px-2 py-0.5 text-xs border rounded ${badgeClass}`}>
+                              {reservedCount}/{items.length} réservés
+                            </span>
+                          </h3>
+                          <ul className="space-y-2">
+                            {items.map((s) => {
+                              const bk = bySlot.get(s.id);
+                              return (
+                                <li key={s.id} className="flex items-center justify-between border rounded-md p-3">
+                                  <div>
+                                    <div className="font-medium">
+                                      {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {" - "}
+                                      {new Date(s.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </div>
+                                    {bk ? (
+                                      <div className="text-xs text-gray-700">
+                                        Réservé par {bk.parent_name || "(Nom non fourni)"} &lt;{bk.parent_email}&gt; — {new Date(bk.created_at).toLocaleString()}
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs text-gray-500">Non réservé</div>
+                                    )}
+                                  </div>
+                                  <div>
+                                    {bk ? (
+                                      <Button disabled={busy} onClick={() => cancelBooking(bk.id)} variant="danger" size="sm">
+                                        Annuler
+                                      </Button>
+                                    ) : (
+                                      <span className="text-xs text-gray-400">—</span>
+                                    )}
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
                         </div>
-                      ) : (
-                        <div className="text-xs text-gray-500">Non réservé</div>
-                      )}
-                    </div>
-                    <div>
-                      {bk ? (
-                        <Button disabled={busy} onClick={() => cancelBooking(bk.id)} variant="danger" size="sm">
-                          Annuler
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-gray-400">—</span>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                      );
+                    })}
+
+                  {fallbacks.length > 0 && (() => {
+                    const byDate = new Map<string, SlotRow[]>();
+                    for (const s of fallbacks) {
+                      const key = new Date(s.starts_at).toLocaleDateString();
+                      const arr = byDate.get(key) ?? [];
+                      arr.push(s);
+                      byDate.set(key, arr);
+                    }
+                    return (
+                      <div className="space-y-6">
+                        {[...byDate.entries()]
+                          .map(([date, items]) => ({
+                            date,
+                            items: items.slice().sort((a,b)=> new Date(a.starts_at).getTime()-new Date(b.starts_at).getTime()),
+                            ts: new Date(items[0].starts_at).setHours(0,0,0,0),
+                          }))
+                          .sort((a,b)=> a.ts - b.ts)
+                          .map(({ date, items }) => (
+                            <div key={date} className="space-y-2">
+                              {(() => {
+                                const reservedCount = items.reduce((acc, s) => acc + (bySlot.get(s.id) ? 1 : 0), 0);
+                                const ratio = reservedCount / items.length;
+                                const badgeClass = ratio >= 0.67
+                                  ? 'bg-red-100 text-red-700 border-red-200'
+                                  : ratio >= 0.34
+                                  ? 'bg-orange-100 text-orange-700 border-orange-200'
+                                  : 'bg-green-100 text-green-700 border-green-200';
+                                return (
+                                  <h3 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                    <span>
+                                      {new Date(items[0].starts_at).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                                    </span>
+                                    <span className={`inline-flex items-center px-2 py-0.5 text-xs border rounded ${badgeClass}`}>
+                                      {reservedCount}/{items.length} réservés
+                                    </span>
+                                  </h3>
+                                );
+                              })()}
+                              <ul className="space-y-2">
+                                {items.map((s) => {
+                                  const bk = bySlot.get(s.id);
+                                  return (
+                                    <li key={s.id} className="flex items-center justify-between border rounded-md p-3">
+                                      <div>
+                                        <div className="font-medium">
+                                          {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                          {" - "}
+                                          {new Date(s.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                        {bk ? (
+                                          <div className="text-xs text-gray-700">
+                                            Réservé par {bk.parent_name || "(Nom non fourni)"} &lt;{bk.parent_email}&gt; — {new Date(bk.created_at).toLocaleString()}
+                                          </div>
+                                        ) : (
+                                          <div className="text-xs text-gray-500">Non réservé</div>
+                                        )}
+                                      </div>
+                                      <div>
+                                        {bk ? (
+                                          <Button disabled={busy} onClick={() => cancelBooking(bk.id)} variant="danger" size="sm">
+                                            Annuler
+                                          </Button>
+                                        ) : (
+                                          <span className="text-xs text-gray-400">—</span>
+                                        )}
+                                      </div>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              );
+            })()
           )}
         </section>
 

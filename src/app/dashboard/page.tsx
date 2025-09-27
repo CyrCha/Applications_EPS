@@ -67,7 +67,7 @@ export default function DashboardPage() {
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="text-center space-y-4">
           <h1 className="text-xl font-semibold">Espace professeur</h1>
-          <p className="text-gray-600">Vous n'êtes pas connecté.</p>
+          <p className="text-gray-600">Vous n&apos;êtes pas connecté.</p>
           <Link
             href="/auth"
             className="inline-block bg-black text-white rounded-md px-4 py-2"

@@ -86,9 +86,9 @@ export default function PublicBookingPage() {
         setEvent(evt as EventRow);
         setSlots((s ?? []) as SlotRow[]);
         setWindows((w ?? []) as WindowRow[]);
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!mounted) return;
-        setError(err.message ?? "Erreur de chargement");
+        setError(err instanceof Error ? err.message : "Erreur de chargement");
       } finally {
         if (mounted) setLoading(false);
       }
@@ -149,8 +149,8 @@ export default function PublicBookingPage() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       }
-    } catch (err: any) {
-      setError(err.message ?? "Erreur lors de la réservation");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur lors de la réservation");
     } finally {
       setSubmitting(false);
     }
@@ -219,7 +219,7 @@ export default function PublicBookingPage() {
               <p className="mb-2">Tous les créneaux sont réservés ou indisponibles pour le moment.</p>
               <div className="flex gap-2">
                 <Button variant="secondary" size="sm" onClick={() => eventUrl && navigator.clipboard.writeText(eventUrl)}>
-                  Copier le lien de l'événement
+                  Copier le lien de l&apos;événement
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => window.location.reload()}>
                   Actualiser
