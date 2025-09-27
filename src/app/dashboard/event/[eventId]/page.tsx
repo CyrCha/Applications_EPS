@@ -24,6 +24,7 @@ type SlotRow = {
   starts_at: string;
   ends_at: string;
   window_id?: string | null;
+  capacity?: number | null;
 };
 
 type BookingRow = {
@@ -98,7 +99,7 @@ export default function ManageEventPage() {
         // Load slots
         const { data: s, error: sErr } = await supabase
           .from("time_slots")
-          .select("id, starts_at, ends_at, window_id")
+          .select("id, starts_at, ends_at, window_id, capacity")
           .eq("event_id", eventId)
           .order("starts_at", { ascending: true });
         if (sErr) throw sErr;
@@ -195,8 +196,12 @@ export default function ManageEventPage() {
   }, [eventId]);
 
   const bySlot = useMemo(() => {
-    const map = new Map<string, BookingRow | undefined>();
-    bookings.forEach((bk) => map.set(bk.slot_id, bk));
+    const map = new Map<string, BookingRow[]>();
+    for (const bk of bookings) {
+      const arr = map.get(bk.slot_id) ?? [];
+      arr.push(bk);
+      map.set(bk.slot_id, arr);
+    }
     return map;
   }, [bookings]);
 
@@ -313,7 +318,7 @@ export default function ManageEventPage() {
       // Refresh after regeneration
       const { data: s } = await supabase
         .from("time_slots")
-        .select("id, starts_at, ends_at, window_id")
+        .select("id, starts_at, ends_at, window_id, capacity")
         .eq("event_id", event.id)
         .order("starts_at", { ascending: true });
       setSlots((s ?? []) as SlotRow[]);
@@ -336,7 +341,7 @@ export default function ManageEventPage() {
       // refresh view
       const { data: s } = await supabase
         .from("time_slots")
-        .select("id, starts_at, ends_at, window_id")
+        .select("id, starts_at, ends_at, window_id, capacity")
         .eq("event_id", eventId)
         .order("starts_at", { ascending: true });
       setSlots((s ?? []) as SlotRow[]);
@@ -510,7 +515,7 @@ export default function ManageEventPage() {
       }
       const { data: s } = await supabase
         .from("time_slots")
-        .select("id, starts_at, ends_at, window_id")
+        .select("id, starts_at, ends_at, window_id, capacity")
         .eq("event_id", win.event_id)
         .order("starts_at", { ascending: true });
       setSlots((s ?? []) as SlotRow[]);
@@ -646,7 +651,10 @@ export default function ManageEventPage() {
                           </h3>
                           <ul className="space-y-2">
                             {items.map((s) => {
-                              const bk = bySlot.get(s.id);
+                              const bks = bySlot.get(s.id) ?? [];
+                              const reservedCount = bks.length;
+                              const cap = s.capacity ?? 1;
+                              const remaining = Math.max(0, cap - reservedCount);
                               return (
                                 <li key={s.id} className="flex items-center justify-between border rounded-md p-3">
                                   <div>
@@ -655,22 +663,68 @@ export default function ManageEventPage() {
                                       {" - "}
                                       {new Date(s.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </div>
-                                    {bk ? (
-                                      <div className="text-xs text-gray-700">
-                                        Réservé par {bk.parent_name || "(Nom non fourni)"} &lt;{bk.parent_email}&gt; — {new Date(bk.created_at).toLocaleString()}
-                                      </div>
-                                    ) : (
-                                      <div className="text-xs text-gray-500">Non réservé</div>
-                                    )}
+                                    <div className="text-xs text-gray-700">
+                                      Réservations: {reservedCount}/{cap} — Restants: {remaining}
+                                    </div>
                                   </div>
-                                  <div>
-                                    {bk ? (
-                                      <Button disabled={busy} onClick={() => cancelBooking(bk.id)} variant="danger" size="sm">
-                                        Annuler
+                                  <div className="flex items-center gap-2">
+                                    {bks.length > 0 ? (
+                                      <Button disabled={busy} onClick={() => cancelBooking(bks[0].id)} variant="danger" size="sm">
+                                        Annuler 1
                                       </Button>
                                     ) : (
                                       <span className="text-xs text-gray-400">—</span>
                                     )}
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      disabled={busy}
+                                      onClick={async () => {
+                                        try {
+                                          setBusy(true);
+                                          const { error } = await supabase
+                                            .from('time_slots')
+                                            .update({ capacity: cap + 1 })
+                                            .eq('id', s.id);
+                                          if (error) throw error;
+                                          const { data: s2 } = await supabase
+                                            .from('time_slots')
+                                            .select('id, starts_at, ends_at, window_id, capacity')
+                                            .eq('event_id', event.id)
+                                            .order('starts_at', { ascending: true });
+                                          setSlots((s2 ?? []) as SlotRow[]);
+                                        } catch (e) {
+                                          console.error(e);
+                                        } finally {
+                                          setBusy(false);
+                                        }
+                                      }}
+                                    >+1 cap</Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      disabled={busy || cap <= reservedCount || cap <= 1}
+                                      onClick={async () => {
+                                        try {
+                                          setBusy(true);
+                                          const { error } = await supabase
+                                            .from('time_slots')
+                                            .update({ capacity: Math.max(1, cap - 1) })
+                                            .eq('id', s.id);
+                                          if (error) throw error;
+                                          const { data: s2 } = await supabase
+                                            .from('time_slots')
+                                            .select('id, starts_at, ends_at, window_id, capacity')
+                                            .eq('event_id', event.id)
+                                            .order('starts_at', { ascending: true });
+                                          setSlots((s2 ?? []) as SlotRow[]);
+                                        } catch (e) {
+                                          console.error(e);
+                                        } finally {
+                                          setBusy(false);
+                                        }
+                                      }}
+                                    >-1 cap</Button>
                                   </div>
                                 </li>
                               );
@@ -720,7 +774,10 @@ export default function ManageEventPage() {
                               })()}
                               <ul className="space-y-2">
                                 {items.map((s) => {
-                                  const bk = bySlot.get(s.id);
+                                  const bks = bySlot.get(s.id) ?? [];
+                                  const reservedCount = bks.length;
+                                  const cap = s.capacity ?? 1;
+                                  const remaining = Math.max(0, cap - reservedCount);
                                   return (
                                     <li key={s.id} className="flex items-center justify-between border rounded-md p-3">
                                       <div>
@@ -729,22 +786,68 @@ export default function ManageEventPage() {
                                           {" - "}
                                           {new Date(s.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </div>
-                                        {bk ? (
-                                          <div className="text-xs text-gray-700">
-                                            Réservé par {bk.parent_name || "(Nom non fourni)"} &lt;{bk.parent_email}&gt; — {new Date(bk.created_at).toLocaleString()}
-                                          </div>
-                                        ) : (
-                                          <div className="text-xs text-gray-500">Non réservé</div>
-                                        )}
+                                        <div className="text-xs text-gray-700">
+                                          Réservations: {reservedCount}/{cap} — Restants: {remaining}
+                                        </div>
                                       </div>
-                                      <div>
-                                        {bk ? (
-                                          <Button disabled={busy} onClick={() => cancelBooking(bk.id)} variant="danger" size="sm">
-                                            Annuler
+                                      <div className="flex items-center gap-2">
+                                        {bks.length > 0 ? (
+                                          <Button disabled={busy} onClick={() => cancelBooking(bks[0].id)} variant="danger" size="sm">
+                                            Annuler 1
                                           </Button>
                                         ) : (
                                           <span className="text-xs text-gray-400">—</span>
                                         )}
+                                        <Button
+                                          variant="secondary"
+                                          size="sm"
+                                          disabled={busy}
+                                          onClick={async () => {
+                                            try {
+                                              setBusy(true);
+                                              const { error } = await supabase
+                                                .from('time_slots')
+                                                .update({ capacity: cap + 1 })
+                                                .eq('id', s.id);
+                                              if (error) throw error;
+                                              const { data: s2 } = await supabase
+                                                .from('time_slots')
+                                                .select('id, starts_at, ends_at, window_id, capacity')
+                                                .eq('event_id', event.id)
+                                                .order('starts_at', { ascending: true });
+                                              setSlots((s2 ?? []) as SlotRow[]);
+                                            } catch (e) {
+                                              console.error(e);
+                                            } finally {
+                                              setBusy(false);
+                                            }
+                                          }}
+                                        >+1 cap</Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          disabled={busy || cap <= reservedCount || cap <= 1}
+                                          onClick={async () => {
+                                            try {
+                                              setBusy(true);
+                                              const { error } = await supabase
+                                                .from('time_slots')
+                                                .update({ capacity: Math.max(1, cap - 1) })
+                                                .eq('id', s.id);
+                                              if (error) throw error;
+                                              const { data: s2 } = await supabase
+                                                .from('time_slots')
+                                                .select('id, starts_at, ends_at, window_id, capacity')
+                                                .eq('event_id', event.id)
+                                                .order('starts_at', { ascending: true });
+                                              setSlots((s2 ?? []) as SlotRow[]);
+                                            } catch (e) {
+                                              console.error(e);
+                                            } finally {
+                                              setBusy(false);
+                                            }
+                                          }}
+                                        >-1 cap</Button>
                                       </div>
                                     </li>
                                   );
