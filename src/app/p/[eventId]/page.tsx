@@ -135,7 +135,7 @@ export default function PublicBookingPage() {
       if (!parentName) throw new Error("Veuillez saisir votre nom.");
       if (!parentEmail) throw new Error("Veuillez saisir un e-mail.");
 
-      const { data: createdId, error: insertErr } = await supabase.rpc(
+      const { error: insertErr } = await supabase.rpc(
         "create_booking",
         {
           p_slot_id: slotId,

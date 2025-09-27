@@ -9,6 +9,8 @@ import { Field } from "@/components/Field";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
+type JsPDFWithAutoTable = jsPDF & { lastAutoTable?: { finalY?: number } };
+
 type EventRow = {
   id: string;
   title: string;
@@ -261,7 +263,8 @@ export default function ManageEventPage() {
         styles: { fontSize: 9, cellPadding: 4, valign: 'top' },
         headStyles: { fillColor: [66, 133, 244], textColor: 255 },
       });
-      y = ((doc as any).lastAutoTable?.finalY ?? y);
+      const d = doc as JsPDFWithAutoTable;
+      y = (d.lastAutoTable?.finalY ?? y);
     };
 
     // Render window groups
