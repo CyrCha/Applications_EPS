@@ -657,7 +657,7 @@ export default function ManageEventPage() {
                               const remaining = Math.max(0, cap - reservedCount);
                               return (
                                 <li key={s.id} className="flex items-center justify-between border rounded-md p-3">
-                                  <div>
+                                  <div className="min-w-0 flex-1">
                                     <div className="font-medium">
                                       {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                       {" - "}
@@ -666,15 +666,22 @@ export default function ManageEventPage() {
                                     <div className="text-xs text-gray-700">
                                       Réservations: {reservedCount}/{cap} — Restants: {remaining}
                                     </div>
+                                    {bks.length > 0 && (
+                                      <div className="mt-1 space-y-1">
+                                        {bks.map((bk) => (
+                                          <div key={bk.id} className="text-xs text-gray-700 flex items-center justify-between gap-2">
+                                            <span className="truncate">
+                                              Réservé par {bk.parent_name || "(Nom non fourni)"} &lt;{bk.parent_email}&gt; — {new Date(bk.created_at).toLocaleString()}
+                                            </span>
+                                            <Button disabled={busy} onClick={() => cancelBooking(bk.id)} variant="danger" size="sm">
+                                              Annuler
+                                            </Button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    {bks.length > 0 ? (
-                                      <Button disabled={busy} onClick={() => cancelBooking(bks[0].id)} variant="danger" size="sm">
-                                        Annuler 1
-                                      </Button>
-                                    ) : (
-                                      <span className="text-xs text-gray-400">—</span>
-                                    )}
                                     <Button
                                       variant="secondary"
                                       size="sm"
@@ -780,7 +787,7 @@ export default function ManageEventPage() {
                                   const remaining = Math.max(0, cap - reservedCount);
                                   return (
                                     <li key={s.id} className="flex items-center justify-between border rounded-md p-3">
-                                      <div>
+                                      <div className="min-w-0 flex-1">
                                         <div className="font-medium">
                                           {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                           {" - "}
@@ -789,15 +796,22 @@ export default function ManageEventPage() {
                                         <div className="text-xs text-gray-700">
                                           Réservations: {reservedCount}/{cap} — Restants: {remaining}
                                         </div>
+                                        {bks.length > 0 && (
+                                          <div className="mt-1 space-y-1">
+                                            {bks.map((bk) => (
+                                              <div key={bk.id} className="text-xs text-gray-700 flex items-center justify-between gap-2">
+                                                <span className="truncate">
+                                                  Réservé par {bk.parent_name || "(Nom non fourni)"} &lt;{bk.parent_email}&gt; — {new Date(bk.created_at).toLocaleString()}
+                                                </span>
+                                                <Button disabled={busy} onClick={() => cancelBooking(bk.id)} variant="danger" size="sm">
+                                                  Annuler
+                                                </Button>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
                                       </div>
                                       <div className="flex items-center gap-2">
-                                        {bks.length > 0 ? (
-                                          <Button disabled={busy} onClick={() => cancelBooking(bks[0].id)} variant="danger" size="sm">
-                                            Annuler 1
-                                          </Button>
-                                        ) : (
-                                          <span className="text-xs text-gray-400">—</span>
-                                        )}
                                         <Button
                                           variant="secondary"
                                           size="sm"
