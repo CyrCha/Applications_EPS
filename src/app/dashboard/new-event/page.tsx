@@ -1,0 +1,207 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
+import { Button } from "@/components/Button";
+import { Input } from "@/components/Input";
+import { Field } from "@/components/Field";
+
+function combineDateTime(dateStr: string, timeStr: string): string | null {
+  if (!dateStr || !timeStr) return null;
+  // Combine local date and time into an ISO string (local timezone)
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [hour, minute] = timeStr.split(":" ).map(Number);
+  const d = new Date(year, (month - 1), day, hour ?? 0, minute ?? 0, 0, 0);
+  return d.toISOString();
+}
+
+function generateSlots(startIso: string, endIso: string, durationMinutes: number) {
+  const slots: { starts_at: string; ends_at: string }[] = [];
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  if (!(start < end)) return slots;
+  const ms = durationMinutes * 60 * 1000;
+  let cur = new Date(start);
+  while (cur < end) {
+    const next = new Date(cur.getTime() + ms);
+    if (next > end) break;
+    slots.push({ starts_at: cur.toISOString(), ends_at: next.toISOString() });
+    cur = next;
+  }
+  return slots;
+}
+
+export default function NewEventPage() {
+  const router = useRouter();
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [location, setLocation] = useState("");
+  const [isPublic, setIsPublic] = useState(true);
+  const [date, setDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [duration, setDuration] = useState(10);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const userId = auth.user?.id;
+      if (!userId) throw new Error("Vous devez être connecté.");
+
+      const startIso = combineDateTime(date, startTime);
+      const endIso = combineDateTime(date, endTime);
+      if (!startIso || !endIso) throw new Error("Date/horaires invalides.");
+
+      // Create event
+      const { data: eventInsert, error: eventErr } = await supabase
+        .from("events")
+        .insert({
+          teacher_id: userId,
+          title,
+          description,
+          location,
+          is_public: isPublic,
+          starts_at: startIso,
+          ends_at: endIso,
+          slot_duration_minutes: duration,
+        })
+        .select("id")
+        .single();
+
+      if (eventErr) throw eventErr;
+      const eventId = eventInsert.id as string;
+
+      // Generate and insert time slots
+      const slots = generateSlots(startIso, endIso, duration).map((s) => ({
+        event_id: eventId,
+        starts_at: s.starts_at,
+        ends_at: s.ends_at,
+        capacity: 1,
+      }));
+
+      if (slots.length === 0) {
+        console.warn("Aucun créneau généré pour ces horaires/durée.");
+      } else {
+        const { error: slotsErr } = await supabase.from("time_slots").insert(slots);
+        if (slotsErr) throw slotsErr;
+      }
+
+      // Redirect to dashboard (later we can show event detail)
+      router.push("/dashboard");
+    } catch (err: any) {
+      setError(err.message ?? "Erreur lors de la création de l'événement");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen p-6">
+      <div className="max-w-2xl mx-auto">
+        <h1 className="text-2xl font-semibold mb-6">Créer un événement</h1>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <Field label="Titre">
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+              placeholder="Réunion Parents–Professeurs"
+            />
+          </Field>
+
+          <Field label="Description">
+            <textarea
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Ex: Bâtiment A, salle 204"
+              rows={3}
+            />
+          </Field>
+
+          <Field label="Lieu">
+            <Input
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Collège Jean Moulin, Salle 12"
+            />
+          </Field>
+
+          <div className="flex flex-wrap gap-4">
+            <Field label="Date">
+              <Input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                required
+                className="w-[15rem]"
+              />
+            </Field>
+            <Field label="Début">
+              <Input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                required
+                className="w-[9rem]"
+              />
+            </Field>
+            <Field label="Fin">
+              <Input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                required
+                className="w-[9rem]"
+              />
+            </Field>
+            <Field label="Durée (min)">
+              <Input
+                type="number"
+                min={5}
+                step={5}
+                value={duration}
+                onChange={(e) => setDuration(Number(e.target.value))}
+                required
+                className="w-[7rem]"
+              />
+            </Field>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id="isPublic"
+              type="checkbox"
+              checked={isPublic}
+              onChange={(e) => setIsPublic(e.target.checked)}
+            />
+            <label htmlFor="isPublic" className="text-sm">
+              Lien public (les parents peuvent réserver sans compte)
+            </label>
+          </div>
+
+          <div className="flex gap-3">
+            <Button type="submit" disabled={loading}>
+              {loading ? "Création..." : "Créer"}
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => router.push("/dashboard")}>Annuler</Button>
+          </div>
+
+          {error && (
+            <p className="text-red-600 text-sm" role="alert">{error}</p>
+          )}
+        </form>
+        <p className="text-xs text-gray-500 mt-6">
+          Remarque: les heures sont interprétées dans votre fuseau local, puis stockées en UTC.
+        </p>
+      </div>
+    </div>
+  );
+}

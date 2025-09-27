@@ -24,10 +24,27 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-white text-gray-900`}>
+        <header className="sticky top-0 z-10 border-b bg-white/90 backdrop-blur">
+          <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-7 w-7 rounded-md bg-gray-900 text-white grid place-items-center text-xs font-semibold">PT</div>
+              <span className="font-medium">Rendez-vous Parents–Professeurs</span>
+            </div>
+            <nav className="text-sm text-gray-600 hidden sm:flex gap-4">
+              <a href="/" className="hover:text-gray-900">Accueil</a>
+              <a href="/dashboard" className="hover:text-gray-900">Tableau de bord</a>
+            </nav>
+          </div>
+        </header>
+        <main className="mx-auto max-w-6xl px-4 py-6">
+          {children}
+        </main>
+        <footer className="border-t">
+          <div className="mx-auto max-w-6xl px-4 py-6 text-xs text-gray-500">
+            © {new Date().getFullYear()} Parent–Teacher Meetings
+          </div>
+        </footer>
       </body>
     </html>
   );

@@ -1,0 +1,15 @@
+# Netlify config for Next.js (App Router / SSR supported via official plugin)
+# Docs: https://github.com/netlify/next-runtime
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+# Official Next.js plugin for Netlify
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Optional: environment variables can be set here for local Netlify dev, but prefer Netlify UI
+# [template.environment]
+#   NEXT_PUBLIC_SUPABASE_URL = ""
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY = ""
