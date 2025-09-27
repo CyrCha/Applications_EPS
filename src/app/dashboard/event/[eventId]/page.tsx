@@ -56,6 +56,7 @@ export default function ManageEventPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // Editable fields
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState<string | null>(null);
@@ -172,7 +173,7 @@ export default function ManageEventPage() {
           // Re-fetch slots and bookings
           const { data: s } = await supabase
             .from("time_slots")
-            .select("id, starts_at, ends_at")
+            .select("id, starts_at, ends_at, window_id, capacity")
             .eq("event_id", eventId)
             .order("starts_at", { ascending: true });
           setSlots((s ?? []) as SlotRow[]);
@@ -204,6 +205,10 @@ export default function ManageEventPage() {
     }
     return map;
   }, [bookings]);
+
+  const toggleDetails = (slotId: string) => {
+    setExpanded((prev) => ({ ...prev, [slotId]: !prev[slotId] }));
+  };
 
   const deleteEvent = async () => {
     if (!event) return;
@@ -655,6 +660,7 @@ export default function ManageEventPage() {
                               const reservedCount = bks.length;
                               const cap = s.capacity ?? 1;
                               const remaining = Math.max(0, cap - reservedCount);
+                              const isOpen = (expanded[s.id] ?? (reservedCount > 0));
                               return (
                                 <li key={s.id} className="flex items-center justify-between border rounded-md p-3">
                                   <div className="min-w-0 flex-1">
@@ -666,7 +672,7 @@ export default function ManageEventPage() {
                                     <div className="text-xs text-gray-700">
                                       Réservations: {reservedCount}/{cap} — Restants: {remaining}
                                     </div>
-                                    {bks.length > 0 && (
+                                    {bks.length > 0 && isOpen && (
                                       <div className="mt-1 space-y-1">
                                         {bks.map((bk) => (
                                           <div key={bk.id} className="text-xs text-gray-700 flex items-center justify-between gap-2">
@@ -682,6 +688,15 @@ export default function ManageEventPage() {
                                     )}
                                   </div>
                                   <div className="flex items-center gap-2">
+                                    {reservedCount > 0 && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => toggleDetails(s.id)}
+                                      >
+                                        Détails {isOpen ? '▾' : '▸'} ({reservedCount})
+                                      </Button>
+                                    )}
                                     <Button
                                       variant="secondary"
                                       size="sm"
@@ -785,6 +800,7 @@ export default function ManageEventPage() {
                                   const reservedCount = bks.length;
                                   const cap = s.capacity ?? 1;
                                   const remaining = Math.max(0, cap - reservedCount);
+                                  const isOpen = (expanded[s.id] ?? (reservedCount > 0));
                                   return (
                                     <li key={s.id} className="flex items-center justify-between border rounded-md p-3">
                                       <div className="min-w-0 flex-1">
@@ -796,7 +812,7 @@ export default function ManageEventPage() {
                                         <div className="text-xs text-gray-700">
                                           Réservations: {reservedCount}/{cap} — Restants: {remaining}
                                         </div>
-                                        {bks.length > 0 && (
+                                        {bks.length > 0 && isOpen && (
                                           <div className="mt-1 space-y-1">
                                             {bks.map((bk) => (
                                               <div key={bk.id} className="text-xs text-gray-700 flex items-center justify-between gap-2">
@@ -812,6 +828,15 @@ export default function ManageEventPage() {
                                         )}
                                       </div>
                                       <div className="flex items-center gap-2">
+                                        {reservedCount > 0 && (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => toggleDetails(s.id)}
+                                          >
+                                            Détails {isOpen ? '▾' : '▸'} ({reservedCount})
+                                          </Button>
+                                        )}
                                         <Button
                                           variant="secondary"
                                           size="sm"
