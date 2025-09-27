@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Button } from "@/components/Button";
 
 export default function Home() {
@@ -16,12 +15,15 @@ export default function Home() {
           <Button href="/dashboard" variant="secondary">Tableau de bord</Button>
         </nav>
         <section className="rounded-md border p-4">
-          <h2 className="font-medium mb-2">Fonctionnalités v1</h2>
+          <h2 className="font-medium mb-2">Fonctionnalités</h2>
           <ul className="list-disc pl-6 text-sm text-gray-700 space-y-1">
             <li>Connexion par lien magique (professeurs)</li>
-            <li>Création d’événements et créneaux</li>
-            <li>Lien public pour réservations parents</li>
-            <li>Contrainte: un créneau = une réservation</li>
+            <li>Création d’événements et génération automatique des créneaux</li>
+            <li>Capacité multiple par créneau (ex: 2 parents au même horaire) avec ajustement +1/-1</li>
+            <li>Page publique: affichage des places restantes par créneau</li>
+            <li>Page Gérer: badge remplissage par groupe + pastille « Détails » (nom/email/date) + annulation par réservation</li>
+            <li>ICS: ajout du rendez-vous au calendrier après réservation</li>
+            <li>Déploiement Netlify (plugin Next.js officiel)</li>
           </ul>
         </section>
       </div>

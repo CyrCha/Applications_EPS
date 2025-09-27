@@ -48,7 +48,6 @@ export default function ManageEventPage() {
   const eventId = params?.eventId;
   const router = useRouter();
 
-  const [email, setEmail] = useState<string | null>(null);
   const [event, setEvent] = useState<EventRow | null>(null);
   const [slots, setSlots] = useState<SlotRow[]>([]);
   const [bookings, setBookings] = useState<BookingRow[]>([]);
@@ -87,7 +86,7 @@ export default function ManageEventPage() {
           router.replace("/auth");
           return;
         }
-        setEmail(auth.user.email ?? null);
+        // auth.user.email is not used in this page
 
         // Load event (must belong to teacher via RLS)
         const { data: evt, error: evtErr } = await supabase
@@ -169,7 +168,7 @@ export default function ManageEventPage() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'bookings' },
-        async (_payload) => {
+        async () => {
           // Re-fetch slots and bookings
           const { data: s } = await supabase
             .from("time_slots")
