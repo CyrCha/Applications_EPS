@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { Field } from "@/components/Field";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 
 type EventRow = {
   id: string;
@@ -207,6 +209,119 @@ export default function ManageEventPage() {
 
   const toggleDetails = (slotId: string) => {
     setExpanded((prev) => ({ ...prev, [slotId]: !prev[slotId] }));
+  };
+
+  const exportToPdf = () => {
+    if (!event) return;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const marginLeft = 40;
+    let y = 40;
+    const title = event.title || 'Événement';
+    doc.setFontSize(16);
+    doc.text(title, marginLeft, y);
+    y += 18;
+    doc.setFontSize(10);
+    if (event.location) { doc.text(`Lieu: ${event.location}`, marginLeft, y); y += 14; }
+    if (event.starts_at) { doc.text(`Début: ${new Date(event.starts_at).toLocaleString()}`, marginLeft, y); y += 14; }
+    if (event.ends_at) { doc.text(`Fin: ${new Date(event.ends_at).toLocaleString()}`, marginLeft, y); y += 14; }
+
+    // Build groups similarly to UI: first by window, fallback by date
+    const byWindow = new Map<string, SlotRow[]>();
+    const fallbacks: SlotRow[] = [];
+    for (const s of slots) {
+      if (s.window_id) {
+        const arr = byWindow.get(s.window_id) ?? [];
+        arr.push(s);
+        byWindow.set(s.window_id, arr);
+      } else {
+        fallbacks.push(s);
+      }
+    }
+    const winById = new Map(windows.map(w => [w.id, w] as const));
+
+    const renderGroup = (groupTitle: string, items: SlotRow[]) => {
+      const rows: Array<[string, string, string, string]> = [];
+      for (const s of items.slice().sort((a,b)=> new Date(a.starts_at).getTime()-new Date(b.starts_at).getTime())) {
+        const bks = bySlot.get(s.id) ?? [];
+        const reserved = bks.map(b => `${b.parent_name ?? ''} <${b.parent_email}>`).filter(Boolean).join('\n');
+        const cap = s.capacity ?? 1;
+        const left = Math.max(0, cap - bks.length);
+        rows.push([
+          `${new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(s.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+          reserved || '—',
+          String(cap),
+          String(left),
+        ]);
+      }
+      autoTable(doc, {
+        startY: y + 8,
+        margin: { left: marginLeft, right: marginLeft },
+        head: [[groupTitle, 'Réservations', 'Capacité', 'Restants']],
+        body: rows,
+        styles: { fontSize: 9, cellPadding: 4, valign: 'top' },
+        headStyles: { fillColor: [66, 133, 244], textColor: 255 },
+      });
+      y = ((doc as any).lastAutoTable?.finalY ?? y);
+    };
+
+    // Render window groups
+    const groups = [...byWindow.entries()]
+      .map(([winId, items]) => ({
+        title: (() => {
+          const w = winById.get(winId);
+          if (w) {
+            const dateLabel = new Date(w.starts_at).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit' });
+            const startLabel = new Date(w.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const endLabel = new Date(w.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            return `${dateLabel} — ${startLabel} → ${endLabel}${w.slot_duration_minutes ? ` — ${w.slot_duration_minutes} min` : ''}`;
+          }
+          const f = items[0];
+          return new Date(f.starts_at).toLocaleDateString();
+        })(),
+        items,
+        startAt: (() => {
+          const w = winById.get(winId);
+          return new Date(w ? w.starts_at : items[0].starts_at).getTime();
+        })(),
+      }))
+      .sort((a,b)=> a.startAt - b.startAt);
+
+    for (const g of groups) {
+      y += 22;
+      doc.setFontSize(12);
+      doc.text(g.title, marginLeft, y);
+      renderGroup('', g.items);
+    }
+
+    // Render fallbacks grouped by date
+    if (fallbacks.length > 0) {
+      const byDate = new Map<string, SlotRow[]>();
+      for (const s of fallbacks) {
+        const key = new Date(s.starts_at).toLocaleDateString();
+        const arr = byDate.get(key) ?? [];
+        arr.push(s);
+        byDate.set(key, arr);
+      }
+      const dates = [...byDate.entries()].map(([date, items]) => ({ date, items, ts: new Date(items[0].starts_at).setHours(0,0,0,0) }))
+        .sort((a,b)=> a.ts - b.ts);
+      for (const d of dates) {
+        y += 22;
+        doc.setFontSize(12);
+        doc.text(d.date, marginLeft, y);
+        renderGroup('', d.items);
+      }
+    }
+
+    // Footer
+    const pages = doc.getNumberOfPages();
+    for (let i = 1; i <= pages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      const text = `Exporté le ${new Date().toLocaleString()} — Page ${i}/${pages}`;
+      doc.text(text, marginLeft, doc.internal.pageSize.getHeight() - 20);
+    }
+
+    doc.save(`${(event.title || 'export').replace(/\s+/g, '-')}.pdf`);
   };
 
   const deleteEvent = async () => {
@@ -592,6 +707,9 @@ export default function ManageEventPage() {
                 Régénérer les créneaux
               </Button>
             )}
+            <Button disabled={busy} onClick={exportToPdf} variant="secondary" size="sm">
+              Exporter en PDF
+            </Button>
             <Button disabled={busy} onClick={deleteEvent} variant="danger" size="sm">
               Supprimer
             </Button>
