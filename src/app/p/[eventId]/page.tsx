@@ -40,6 +40,8 @@ export default function PublicBookingPage() {
   const [windows, setWindows] = useState<WindowRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [caps, setCaps] = useState<Record<string, number>>({});
+  const [bookedCounts, setBookedCounts] = useState<Record<string, number>>({});
 
   const [parentName, setParentName] = useState("");
   const [parentEmail, setParentEmail] = useState("");
@@ -84,8 +86,31 @@ export default function PublicBookingPage() {
 
         if (!mounted) return;
         setEvent(evt as EventRow);
-        setSlots((s ?? []) as SlotRow[]);
+        const slotsData = (s ?? []) as SlotRow[];
+        setSlots(slotsData);
         setWindows((w ?? []) as WindowRow[]);
+
+        // Fetch capacities and booking counts for visible slots
+        const slotIds = slotsData.map((x) => x.id);
+        if (slotIds.length > 0) {
+          try {
+            const [{ data: ts }, { data: bs }] = await Promise.all([
+              supabase.from('time_slots').select('id, capacity').in('id', slotIds),
+              supabase.from('bookings').select('slot_id').in('slot_id', slotIds),
+            ]);
+            const capMap: Record<string, number> = {};
+            for (const row of ts ?? []) capMap[row.id as string] = Math.max(1, Number(row.capacity ?? 1));
+            setCaps(capMap);
+            const counts: Record<string, number> = {};
+            for (const b of bs ?? []) counts[b.slot_id as string] = (counts[b.slot_id as string] ?? 0) + 1;
+            setBookedCounts(counts);
+          } catch {
+            // ignore if RLS denies; remaining hint won't be shown
+          }
+        } else {
+          setCaps({});
+          setBookedCounts({});
+        }
       } catch (err: unknown) {
         if (!mounted) return;
         setError(err instanceof Error ? err.message : "Erreur de chargement");
@@ -132,7 +157,29 @@ export default function PublicBookingPage() {
 
       setSuccess("Réservation confirmée ! Vous pouvez ajouter ce rendez-vous à votre calendrier.");
       const { data: s } = await supabase.rpc("available_slots", { p_event_id: eventId });
-      setSlots((s ?? []) as SlotRow[]);
+      const slotsData = (s ?? []) as SlotRow[];
+      setSlots(slotsData);
+      // refresh capacities and counts
+      const slotIds = slotsData.map((x) => x.id);
+      if (slotIds.length > 0) {
+        try {
+          const [{ data: ts }, { data: bs }] = await Promise.all([
+            supabase.from('time_slots').select('id, capacity').in('id', slotIds),
+            supabase.from('bookings').select('slot_id').in('slot_id', slotIds),
+          ]);
+          const capMap: Record<string, number> = {};
+          for (const row of ts ?? []) capMap[row.id as string] = Math.max(1, Number(row.capacity ?? 1));
+          setCaps(capMap);
+          const counts: Record<string, number> = {};
+          for (const b of bs ?? []) counts[b.slot_id as string] = (counts[b.slot_id as string] ?? 0) + 1;
+          setBookedCounts(counts);
+        } catch {
+          // ignore
+        }
+      } else {
+        setCaps({});
+        setBookedCounts({});
+      }
       const takenId = slotId;
       setSlotId("");
 
@@ -282,6 +329,11 @@ export default function PublicBookingPage() {
                                       {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                       {" - "}
                                       {new Date(s.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {(() => {
+                                        const cap = caps[s.id];
+                                        const cnt = bookedCounts[s.id] ?? 0;
+                                        return cap ? ` — restants: ${Math.max(0, cap - cnt)}` : '';
+                                      })()}
                                     </span>
                                   </label>
                                 </li>
@@ -332,6 +384,11 @@ export default function PublicBookingPage() {
                                           {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                           {" - "}
                                           {new Date(s.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                          {(() => {
+                                            const cap = caps[s.id];
+                                            const cnt = bookedCounts[s.id] ?? 0;
+                                            return cap ? ` — restants: ${Math.max(0, cap - cnt)}` : '';
+                                          })()}
                                         </span>
                                       </label>
                                     </li>
