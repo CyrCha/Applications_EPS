@@ -95,8 +95,9 @@ export default function NewEventPage() {
 
       // Redirect to dashboard (later we can show event detail)
       router.push("/dashboard");
-    } catch (err: any) {
-      setError(err.message ?? "Erreur lors de la création de l'événement");
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message);
+      else setError("Erreur lors de la création de l'événement");
     } finally {
       setLoading(false);
     }
