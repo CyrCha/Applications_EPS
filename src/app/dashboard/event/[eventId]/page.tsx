@@ -253,26 +253,22 @@ export default function ManageEventPage() {
       if (evtErr) throw evtErr;
       const newEventId = copyEvt.id as string;
 
-      // Copy windows first so the duplicated slots keep their grouping.
+      // Copy windows one by one so each copy is mapped to its source, even when
+      // two windows share the same start.
       const windowIdMap = new Map<string, string>();
-      if (windows.length > 0) {
-        const { data: newWindows, error: winErr } = await supabase
+      for (const w of windows) {
+        const { data: created, error: winErr } = await supabase
           .from("event_windows")
-          .insert(
-            windows.map((w) => ({
-              event_id: newEventId,
-              starts_at: w.starts_at,
-              ends_at: w.ends_at,
-              slot_duration_minutes: w.slot_duration_minutes,
-            }))
-          )
-          .select("id, starts_at");
+          .insert({
+            event_id: newEventId,
+            starts_at: w.starts_at,
+            ends_at: w.ends_at,
+            slot_duration_minutes: w.slot_duration_minutes,
+          })
+          .select("id")
+          .single();
         if (winErr) throw winErr;
-        const sourceByStart = new Map(windows.map((w) => [w.starts_at, w.id] as const));
-        for (const created of newWindows ?? []) {
-          const sourceId = sourceByStart.get(created.starts_at as string);
-          if (sourceId) windowIdMap.set(sourceId, created.id as string);
-        }
+        windowIdMap.set(w.id, created.id as string);
       }
 
       if (slots.length > 0) {
