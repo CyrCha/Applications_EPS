@@ -369,15 +369,6 @@ export default function ManageEventPage() {
     }, "Erreur lors de l'enregistrement");
   };
 
-  const scheduleChanged = useMemo(() => {
-    if (!event) return false;
-    return (
-      combineDateTime(editDate, editStart) !== (event.starts_at ?? null) ||
-      combineDateTime(editDate, editEnd) !== (event.ends_at ?? null) ||
-      editDuration !== (event.slot_duration_minutes ?? 10)
-    );
-  }, [event, editDate, editStart, editEnd, editDuration]);
-
   const createWindow = () => {
     if (!event) return;
     const startIso = combineDateTime(newWinDate, newWinStart);
@@ -484,7 +475,7 @@ export default function ManageEventPage() {
             Dupliquer
           </Button>
           {windows.length === 0 && (
-            <Button disabled={busy || !scheduleChanged} onClick={regenerateSlots} variant="secondary" size="sm">
+            <Button disabled={busy} onClick={regenerateSlots} variant="secondary" size="sm">
               Régénérer les créneaux
             </Button>
           )}

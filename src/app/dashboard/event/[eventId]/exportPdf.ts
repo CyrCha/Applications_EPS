@@ -12,6 +12,9 @@ type ExportEvent = {
 
 const MARGIN = 40;
 
+/** jsPDF core fonts use WinAnsi, which has no arrow glyph. */
+const pdfText = (value: string) => value.replace(/[→–]/g, "-");
+
 /**
  * jsPDF and its autotable plugin weigh several hundred kB, so they are only
  * fetched when a teacher actually exports.
@@ -51,13 +54,13 @@ export async function exportEventToPdf(
       y = MARGIN;
     }
     doc.setFontSize(12);
-    doc.text(group.label, MARGIN, y);
+    doc.text(pdfText(group.label), MARGIN, y);
 
     const body = group.items.map((slot) => {
       const slotBookings = bookingsBySlot.get(slot.id) ?? [];
       const capacity = Math.max(1, slot.capacity ?? 1);
       return [
-        formatRange(slot.starts_at, slot.ends_at),
+        pdfText(formatRange(slot.starts_at, slot.ends_at)),
         slotBookings.map((b) => `${b.parent_name ?? ""} <${b.parent_email}>`).join("\n") || "—",
         String(capacity),
         String(remainingSeats(capacity, slotBookings.length)),
@@ -79,7 +82,7 @@ export async function exportEventToPdf(
   for (let i = 1; i <= pages; i++) {
     doc.setPage(i);
     doc.setFontSize(8);
-    doc.text(`Exporté le ${formatDateTime(new Date())} — Page ${i}/${pages}`, MARGIN, pageHeight - 20);
+    doc.text(pdfText(`Exporté le ${formatDateTime(new Date())} - Page ${i}/${pages}`), MARGIN, pageHeight - 20);
   }
 
   doc.save(`${(event.title || "export").replace(/\s+/g, "-")}.pdf`);
