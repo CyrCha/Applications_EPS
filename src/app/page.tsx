@@ -2,7 +2,7 @@ import { Button } from "@/components/Button";
 
 export default function Home() {
   return (
-    <div className="min-h-screen p-8">
+    <div>
       <div className="max-w-2xl mx-auto space-y-6">
         <header className="space-y-2">
           <h1 className="text-3xl font-semibold">Rendez-vous Parents–Professeurs</h1>
