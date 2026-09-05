@@ -6,31 +6,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { Field } from "@/components/Field";
-
-function combineDateTime(dateStr: string, timeStr: string): string | null {
-  if (!dateStr || !timeStr) return null;
-  // Combine local date and time into an ISO string (local timezone)
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const [hour, minute] = timeStr.split(":" ).map(Number);
-  const d = new Date(year, (month - 1), day, hour ?? 0, minute ?? 0, 0, 0);
-  return d.toISOString();
-}
-
-function generateSlots(startIso: string, endIso: string, durationMinutes: number) {
-  const slots: { starts_at: string; ends_at: string }[] = [];
-  const start = new Date(startIso);
-  const end = new Date(endIso);
-  if (!(start < end)) return slots;
-  const ms = durationMinutes * 60 * 1000;
-  let cur = new Date(start);
-  while (cur < end) {
-    const next = new Date(cur.getTime() + ms);
-    if (next > end) break;
-    slots.push({ starts_at: cur.toISOString(), ends_at: next.toISOString() });
-    cur = next;
-  }
-  return slots;
-}
+import { combineDateTime } from "@/lib/datetime";
+import { generateSlots, MIN_SLOT_DURATION_MINUTES, validateSchedule } from "@/lib/slots";
 
 export default function NewEventPage() {
   const router = useRouter();
@@ -57,7 +34,8 @@ export default function NewEventPage() {
 
       const startIso = combineDateTime(date, startTime);
       const endIso = combineDateTime(date, endTime);
-      if (!startIso || !endIso) throw new Error("Date/horaires invalides.");
+      const invalid = validateSchedule(startIso, endIso, duration);
+      if (invalid || !startIso || !endIso) throw new Error(invalid ?? "Date/horaires invalides.");
 
       // Create event
       const { data: eventInsert, error: eventErr } = await supabase
@@ -86,15 +64,12 @@ export default function NewEventPage() {
         capacity: 1,
       }));
 
-      if (slots.length === 0) {
-        console.warn("Aucun créneau généré pour ces horaires/durée.");
-      } else {
+      if (slots.length > 0) {
         const { error: slotsErr } = await supabase.from("time_slots").insert(slots);
         if (slotsErr) throw slotsErr;
       }
 
-      // Redirect to dashboard (later we can show event detail)
-      router.push("/dashboard");
+      router.push(`/dashboard/event/${eventId}`);
     } catch (err: unknown) {
       if (err instanceof Error) setError(err.message);
       else setError("Erreur lors de la création de l'événement");
@@ -103,8 +78,15 @@ export default function NewEventPage() {
     }
   };
 
+  const slotPreview = (() => {
+    const startIso = combineDateTime(date, startTime);
+    const endIso = combineDateTime(date, endTime);
+    if (!startIso || !endIso || validateSchedule(startIso, endIso, duration)) return null;
+    return generateSlots(startIso, endIso, duration).length;
+  })();
+
   return (
-    <div className="min-h-screen p-6">
+    <div>
       <div className="max-w-2xl mx-auto">
         <h1 className="text-2xl font-semibold mb-6">Créer un événement</h1>
         <form onSubmit={onSubmit} className="space-y-4">
@@ -166,7 +148,7 @@ export default function NewEventPage() {
             <Field label="Durée (min)">
               <Input
                 type="number"
-                min={5}
+                min={MIN_SLOT_DURATION_MINUTES}
                 step={5}
                 value={duration}
                 onChange={(e) => setDuration(Number(e.target.value))}
@@ -187,6 +169,10 @@ export default function NewEventPage() {
               Lien public (les parents peuvent réserver sans compte)
             </label>
           </div>
+
+          {slotPreview !== null && (
+            <p className="text-xs text-gray-600">{slotPreview} créneau(x) seront générés.</p>
+          )}
 
           <div className="flex gap-3">
             <Button type="submit" disabled={loading}>
