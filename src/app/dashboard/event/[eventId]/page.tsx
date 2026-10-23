@@ -60,6 +60,9 @@ export default function ManageEventPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
+  const [editSlotStart, setEditSlotStart] = useState("");
+  const [editSlotEnd, setEditSlotEnd] = useState("");
   // Editable fields
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState<string | null>(null);
@@ -267,9 +270,16 @@ export default function ManageEventPage() {
       y = (d.lastAutoTable?.finalY ?? y);
     };
 
-    // Render window groups
-    const groups = [...byWindow.entries()]
-      .map(([winId, items]) => ({
+    // Render window groups and fallback date-groups merged chronologically
+    const byDate = new Map<string, SlotRow[]>();
+    for (const s of fallbacks) {
+      const key = new Date(s.starts_at).toLocaleDateString();
+      const arr = byDate.get(key) ?? [];
+      arr.push(s);
+      byDate.set(key, arr);
+    }
+    const groups = [
+      ...[...byWindow.entries()].map(([winId, items]) => ({
         title: (() => {
           const w = winById.get(winId);
           if (w) {
@@ -286,33 +296,19 @@ export default function ManageEventPage() {
           const w = winById.get(winId);
           return new Date(w ? w.starts_at : items[0].starts_at).getTime();
         })(),
-      }))
-      .sort((a,b)=> a.startAt - b.startAt);
+      })),
+      ...[...byDate.entries()].map(([date, items]) => ({
+        title: date,
+        items,
+        startAt: new Date(items[0].starts_at).getTime(),
+      })),
+    ].sort((a,b)=> a.startAt - b.startAt);
 
     for (const g of groups) {
       y += 22;
       doc.setFontSize(12);
       doc.text(g.title, marginLeft, y);
       renderGroup('', g.items);
-    }
-
-    // Render fallbacks grouped by date
-    if (fallbacks.length > 0) {
-      const byDate = new Map<string, SlotRow[]>();
-      for (const s of fallbacks) {
-        const key = new Date(s.starts_at).toLocaleDateString();
-        const arr = byDate.get(key) ?? [];
-        arr.push(s);
-        byDate.set(key, arr);
-      }
-      const dates = [...byDate.entries()].map(([date, items]) => ({ date, items, ts: new Date(items[0].starts_at).setHours(0,0,0,0) }))
-        .sort((a,b)=> a.ts - b.ts);
-      for (const d of dates) {
-        y += 22;
-        doc.setFontSize(12);
-        doc.text(d.date, marginLeft, y);
-        renderGroup('', d.items);
-      }
     }
 
     // Footer
@@ -480,6 +476,79 @@ export default function ManageEventPage() {
     }
   };
 
+  const refreshSlotsAndBookings = async () => {
+    const { data: s } = await supabase
+      .from("time_slots")
+      .select("id, starts_at, ends_at, window_id, capacity")
+      .eq("event_id", eventId)
+      .order("starts_at", { ascending: true });
+    const slotsData = (s ?? []) as SlotRow[];
+    setSlots(slotsData);
+    const slotIds = slotsData.map((x) => x.id);
+    if (slotIds.length > 0) {
+      const { data: b } = await supabase
+        .from("bookings")
+        .select("id, slot_id, parent_email, parent_name, created_at")
+        .in("slot_id", slotIds);
+      setBookings((b ?? []) as BookingRow[]);
+    } else {
+      setBookings([]);
+    }
+  };
+
+  const startEditSlot = (s: SlotRow) => {
+    const bks = bySlot.get(s.id) ?? [];
+    if (bks.length > 0 && !confirm(`Ce créneau a ${bks.length} réservation(s). Modifier ses horaires ?`)) return;
+    setEditingSlotId(s.id);
+    setEditSlotStart(new Date(s.starts_at).toTimeString().slice(0, 5));
+    setEditSlotEnd(new Date(s.ends_at).toTimeString().slice(0, 5));
+  };
+
+  const saveSlotTime = async (s: SlotRow) => {
+    if (!editSlotStart || !editSlotEnd) return;
+    const base = new Date(s.starts_at);
+    const at = (t: string) => {
+      const [h, m] = t.split(":").map(Number);
+      return new Date(base.getFullYear(), base.getMonth(), base.getDate(), h ?? 0, m ?? 0, 0, 0);
+    };
+    const start = at(editSlotStart);
+    const end = at(editSlotEnd);
+    if (!(start < end)) return;
+    try {
+      setBusy(true);
+      const { error } = await supabase
+        .from('time_slots')
+        .update({ starts_at: start.toISOString(), ends_at: end.toISOString() })
+        .eq('id', s.id);
+      if (error) throw error;
+      setEditingSlotId(null);
+      await refreshSlotsAndBookings();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur lors de la modification du créneau");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteSlot = async (s: SlotRow) => {
+    const bks = bySlot.get(s.id) ?? [];
+    const msg = bks.length > 0
+      ? `Supprimer ce créneau ? ${bks.length} réservation(s) associée(s) seront également supprimée(s).`
+      : "Supprimer ce créneau ?";
+    if (!confirm(msg)) return;
+    try {
+      setBusy(true);
+      const { error } = await supabase.from('time_slots').delete().eq('id', s.id);
+      if (error) throw error;
+      if (editingSlotId === s.id) setEditingSlotId(null);
+      await refreshSlotsAndBookings();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur lors de la suppression du créneau");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Helpers (component scope)
   function combineDateTime(dateStr: string, timeStr: string): string | null {
     if (!dateStr || !timeStr) return null;
@@ -602,7 +671,7 @@ export default function ManageEventPage() {
       setWindows((w ?? []) as WindowRow[]);
       const { data: s } = await supabase
         .from("time_slots")
-        .select("id, starts_at, ends_at")
+        .select("id, starts_at, ends_at, window_id, capacity")
         .eq("event_id", event.id)
         .order("starts_at", { ascending: true });
       setSlots((s ?? []) as SlotRow[]);
@@ -725,7 +794,7 @@ export default function ManageEventPage() {
             <p className="text-sm text-gray-600">Aucun créneau.</p>
           ) : (
             (() => {
-              // Group by window when possible, else by date
+              // Group by window when possible, else by date — then merge all groups chronologically
               const byWindow = new Map<string, SlotRow[]>();
               const fallbacks: SlotRow[] = [];
               for (const s of slots) {
@@ -738,21 +807,38 @@ export default function ManageEventPage() {
                 }
               }
               const winById = new Map(windows.map(w => [w.id, w] as const));
+              const byDate = new Map<string, SlotRow[]>();
+              for (const s of fallbacks) {
+                const key = new Date(s.starts_at).toLocaleDateString();
+                const arr = byDate.get(key) ?? [];
+                arr.push(s);
+                byDate.set(key, arr);
+              }
+              const sortByStart = (items: SlotRow[]) =>
+                items.slice().sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+              const groups = [
+                ...[...byWindow.entries()].map(([winId, items]) => {
+                  const w = winById.get(winId);
+                  return {
+                    groupKey: `win-${winId}`,
+                    winId: winId as string | undefined,
+                    items: sortByStart(items),
+                    startAt: new Date(w ? w.starts_at : items[0].starts_at).getTime(),
+                  };
+                }),
+                ...[...byDate.entries()].map(([date, items]) => ({
+                  groupKey: `date-${date}`,
+                  winId: undefined as string | undefined,
+                  items: sortByStart(items),
+                  startAt: new Date(items[0].starts_at).getTime(),
+                })),
+              ].sort((a, b) => a.startAt - b.startAt);
 
               return (
                 <div className="space-y-6">
-                  {[...byWindow.entries()]
-                    .map(([winId, items]) => ({
-                      winId,
-                      items: items.slice().sort((a,b)=> new Date(a.starts_at).getTime()-new Date(b.starts_at).getTime()),
-                      startAt: (() => {
-                        const w = winById.get(winId);
-                        return new Date(w ? w.starts_at : items[0].starts_at).getTime();
-                      })(),
-                    }))
-                    .sort((a,b)=> a.startAt - b.startAt)
-                    .map(({ winId, items }) => {
-                      const w = winById.get(winId);
+                  {groups
+                    .map(({ groupKey, winId, items }) => {
+                      const w = winId ? winById.get(winId) : undefined;
                       const dateLabel = w ? new Date(w.starts_at).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit' }) : new Date(items[0].starts_at).toLocaleDateString();
                       const startLabel = w ? new Date(w.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(items[0].starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                       const endLabel = w ? new Date(w.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(items[items.length-1].ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -765,7 +851,7 @@ export default function ManageEventPage() {
                         ? 'bg-orange-100 text-orange-700 border-orange-200'
                         : 'bg-green-100 text-green-700 border-green-200';
                       return (
-                        <div key={winId} className="space-y-2">
+                        <div key={groupKey} className="space-y-2">
                           <h3 className="text-sm font-medium text-gray-700 flex items-center gap-2">
                             <span>
                               {dateLabel} — {startLabel} → {endLabel}{dur ? ` — ${dur} min` : ''}
@@ -785,9 +871,19 @@ export default function ManageEventPage() {
                                 <li key={s.id} className="flex items-center justify-between border rounded-md p-3">
                                   <div className="min-w-0 flex-1">
                                     <div className="font-medium">
-                                      {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                      {" - "}
-                                      {new Date(s.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {editingSlotId === s.id ? (
+                                        <span className="flex items-center gap-2">
+                                          <Input type="time" value={editSlotStart} onChange={(e) => setEditSlotStart(e.target.value)} className="w-[7rem]" />
+                                          <span>→</span>
+                                          <Input type="time" value={editSlotEnd} onChange={(e) => setEditSlotEnd(e.target.value)} className="w-[7rem]" />
+                                        </span>
+                                      ) : (
+                                        <>
+                                          {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                          {" - "}
+                                          {new Date(s.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </>
+                                      )}
                                     </div>
                                     <div className="text-xs text-gray-700">
                                       Réservations: {reservedCount}/{cap} — Restants: {remaining}
@@ -808,146 +904,22 @@ export default function ManageEventPage() {
                                     )}
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    {reservedCount > 0 && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => toggleDetails(s.id)}
-                                      >
-                                        Détails {isOpen ? '▾' : '▸'} ({reservedCount})
-                                      </Button>
-                                    )}
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      disabled={busy}
-                                      onClick={async () => {
-                                        try {
-                                          setBusy(true);
-                                          const { error } = await supabase
-                                            .from('time_slots')
-                                            .update({ capacity: cap + 1 })
-                                            .eq('id', s.id);
-                                          if (error) throw error;
-                                          const { data: s2 } = await supabase
-                                            .from('time_slots')
-                                            .select('id, starts_at, ends_at, window_id, capacity')
-                                            .eq('event_id', event.id)
-                                            .order('starts_at', { ascending: true });
-                                          setSlots((s2 ?? []) as SlotRow[]);
-                                        } catch (e) {
-                                          console.error(e);
-                                        } finally {
-                                          setBusy(false);
-                                        }
-                                      }}
-                                    >+1 cap</Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      disabled={busy || cap <= reservedCount || cap <= 1}
-                                      onClick={async () => {
-                                        try {
-                                          setBusy(true);
-                                          const { error } = await supabase
-                                            .from('time_slots')
-                                            .update({ capacity: Math.max(1, cap - 1) })
-                                            .eq('id', s.id);
-                                          if (error) throw error;
-                                          const { data: s2 } = await supabase
-                                            .from('time_slots')
-                                            .select('id, starts_at, ends_at, window_id, capacity')
-                                            .eq('event_id', event.id)
-                                            .order('starts_at', { ascending: true });
-                                          setSlots((s2 ?? []) as SlotRow[]);
-                                        } catch (e) {
-                                          console.error(e);
-                                        } finally {
-                                          setBusy(false);
-                                        }
-                                      }}
-                                    >-1 cap</Button>
-                                  </div>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                      );
-                    })}
-
-                  {fallbacks.length > 0 && (() => {
-                    const byDate = new Map<string, SlotRow[]>();
-                    for (const s of fallbacks) {
-                      const key = new Date(s.starts_at).toLocaleDateString();
-                      const arr = byDate.get(key) ?? [];
-                      arr.push(s);
-                      byDate.set(key, arr);
-                    }
-                    return (
-                      <div className="space-y-6">
-                        {[...byDate.entries()]
-                          .map(([date, items]) => ({
-                            date,
-                            items: items.slice().sort((a,b)=> new Date(a.starts_at).getTime()-new Date(b.starts_at).getTime()),
-                            ts: new Date(items[0].starts_at).setHours(0,0,0,0),
-                          }))
-                          .sort((a,b)=> a.ts - b.ts)
-                          .map(({ date, items }) => (
-                            <div key={date} className="space-y-2">
-                              {(() => {
-                                const reservedCount = items.reduce((acc, s) => acc + (bySlot.get(s.id) ? 1 : 0), 0);
-                                const ratio = reservedCount / items.length;
-                                const badgeClass = ratio >= 0.67
-                                  ? 'bg-red-100 text-red-700 border-red-200'
-                                  : ratio >= 0.34
-                                  ? 'bg-orange-100 text-orange-700 border-orange-200'
-                                  : 'bg-green-100 text-green-700 border-green-200';
-                                return (
-                                  <h3 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                    <span>
-                                      {new Date(items[0].starts_at).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit' })}
-                                    </span>
-                                    <span className={`inline-flex items-center px-2 py-0.5 text-xs border rounded ${badgeClass}`}>
-                                      {reservedCount}/{items.length} réservés
-                                    </span>
-                                  </h3>
-                                );
-                              })()}
-                              <ul className="space-y-2">
-                                {items.map((s) => {
-                                  const bks = bySlot.get(s.id) ?? [];
-                                  const reservedCount = bks.length;
-                                  const cap = s.capacity ?? 1;
-                                  const remaining = Math.max(0, cap - reservedCount);
-                                  const isOpen = (expanded[s.id] ?? (reservedCount > 0));
-                                  return (
-                                    <li key={s.id} className="flex items-center justify-between border rounded-md p-3">
-                                      <div className="min-w-0 flex-1">
-                                        <div className="font-medium">
-                                          {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                          {" - "}
-                                          {new Date(s.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        </div>
-                                        <div className="text-xs text-gray-700">
-                                          Réservations: {reservedCount}/{cap} — Restants: {remaining}
-                                        </div>
-                                        {bks.length > 0 && isOpen && (
-                                          <div className="mt-1 space-y-1">
-                                            {bks.map((bk) => (
-                                              <div key={bk.id} className="text-xs text-gray-700 flex items-center justify-between gap-2">
-                                                <span className="truncate">
-                                                  Réservé par {bk.parent_name || "(Nom non fourni)"} &lt;{bk.parent_email}&gt; — {new Date(bk.created_at).toLocaleString()}
-                                                </span>
-                                                <Button disabled={busy} onClick={() => cancelBooking(bk.id)} variant="danger" size="sm">
-                                                  Annuler
-                                                </Button>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-2">
+                                    {editingSlotId === s.id ? (
+                                      <>
+                                        <Button
+                                          size="sm"
+                                          disabled={busy || !editSlotStart || !editSlotEnd || editSlotEnd <= editSlotStart}
+                                          onClick={() => saveSlotTime(s)}
+                                        >Enregistrer</Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          disabled={busy}
+                                          onClick={() => setEditingSlotId(null)}
+                                        >Annuler</Button>
+                                      </>
+                                    ) : (
+                                      <>
                                         {reservedCount > 0 && (
                                           <Button
                                             variant="ghost"
@@ -1007,16 +979,29 @@ export default function ManageEventPage() {
                                             }
                                           }}
                                         >-1 cap</Button>
-                                      </div>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            </div>
-                          ))}
-                      </div>
-                    );
-                  })()}
+                                        <Button
+                                          variant="secondary"
+                                          size="sm"
+                                          disabled={busy}
+                                          onClick={() => startEditSlot(s)}
+                                        >Modifier</Button>
+                                        <Button
+                                          variant="danger"
+                                          size="sm"
+                                          disabled={busy}
+                                          onClick={() => deleteSlot(s)}
+                                        >Supprimer</Button>
+                                      </>
+                                    )}
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      );
+                    })}
+
                 </div>
               );
             })()

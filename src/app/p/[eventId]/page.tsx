@@ -275,7 +275,7 @@ export default function PublicBookingPage() {
             </div>
           ) : (
             (() => {
-              // Prefer grouping by window when available to show full interval and duration
+              // Group by window when possible, else by date — then merge all groups chronologically
               const byWindow = new Map<string, SlotRow[]>();
               const fallbacks: SlotRow[] = [];
               for (const s of slots) {
@@ -288,33 +288,49 @@ export default function PublicBookingPage() {
                 }
               }
               const winById = new Map(windows.map(w => [w.id, w] as const));
+              const byDate = new Map<string, SlotRow[]>();
+              for (const s of fallbacks) {
+                const key = new Date(s.starts_at).toLocaleDateString();
+                const arr = byDate.get(key) ?? [];
+                arr.push(s);
+                byDate.set(key, arr);
+              }
+              const sortByStart = (items: SlotRow[]) =>
+                items.slice().sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+              const groups = [
+                ...[...byWindow.entries()].map(([winId, items]) => {
+                  const w = winById.get(winId);
+                  return {
+                    groupKey: `win-${winId}`,
+                    winId: winId as string | undefined,
+                    items: sortByStart(items),
+                    startAt: new Date(w ? w.starts_at : items[0].starts_at).getTime(),
+                  };
+                }),
+                ...[...byDate.entries()].map(([date, items]) => ({
+                  groupKey: `date-${date}`,
+                  winId: undefined as string | undefined,
+                  items: sortByStart(items),
+                  startAt: new Date(items[0].starts_at).getTime(),
+                })),
+              ].sort((a, b) => a.startAt - b.startAt);
 
               return (
                 <div className="space-y-6">
-                  {[...byWindow.entries()]
-                    .map(([winId, items]) => ({
-                      winId,
-                      items,
-                      startAt: (() => {
-                        const w = winById.get(winId);
-                        return new Date(w ? w.starts_at : items[0].starts_at).getTime();
-                      })(),
-                    }))
-                    .sort((a, b) => a.startAt - b.startAt)
-                    .map(({ winId, items }) => {
-                      const w = winById.get(winId);
-                      const dateLabel = w ? new Date(w.starts_at).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit' }) : new Date(items[0].starts_at).toLocaleDateString();
-                      const startLabel = w ? new Date(w.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(items[0].starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                      const endLabel = w ? new Date(w.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(items[items.length-1].ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                      const dur = w?.slot_duration_minutes;
+                  {groups
+                    .map(({ groupKey, winId, items }) => {
+                      const w = winId ? winById.get(winId) : undefined;
+                      const dateLabel = new Date(w ? w.starts_at : items[0].starts_at).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit' });
+                      const startLabel = new Date(w ? w.starts_at : items[0].starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      const endLabel = new Date(w ? w.ends_at : items[items.length-1].ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      const dur = w?.slot_duration_minutes ?? Math.max(5, Math.round((new Date(items[0].ends_at).getTime() - new Date(items[0].starts_at).getTime()) / 60000));
                       return (
-                        <div key={winId} className="space-y-2">
+                        <div key={groupKey} className="space-y-2">
                           <h3 className="text-sm font-medium text-gray-700">
                             {dateLabel} — {startLabel} → {endLabel}{dur ? ` — ${dur} min` : ''}
                           </h3>
                           <ul className="grid sm:grid-cols-2 gap-2">
                             {items
-                              .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
                               .map((s) => (
                                 <li key={s.id}>
                                   <label className="flex items-center gap-2 border rounded-md p-2 cursor-pointer">
@@ -343,63 +359,6 @@ export default function PublicBookingPage() {
                       );
                     })}
 
-                  {fallbacks.length > 0 && (() => {
-                    const byDate = new Map<string, SlotRow[]>();
-                    for (const s of fallbacks) {
-                      const key = new Date(s.starts_at).toLocaleDateString();
-                      const arr = byDate.get(key) ?? [];
-                      arr.push(s);
-                      byDate.set(key, arr);
-                    }
-                    return (
-                      <div className="space-y-6">
-                        {[...byDate.entries()]
-                          .map(([date, items]) => ({
-                            date,
-                            items,
-                            timestamp: new Date(items[0].starts_at).setHours(0,0,0,0),
-                          }))
-                          .sort((a, b) => a.timestamp - b.timestamp)
-                          .map(({ date, items }) => {
-                            const sorted = items.slice().sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
-                            const startLabel = new Date(sorted[0].starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                            const endLabel = new Date(sorted[sorted.length - 1].ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                            const durMin = Math.max(5, Math.round((new Date(sorted[0].ends_at).getTime() - new Date(sorted[0].starts_at).getTime()) / 60000));
-                            const dateLabel = new Date(sorted[0].starts_at).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit' });
-                            return (
-                              <div key={date} className="space-y-2">
-                                <h3 className="text-sm font-medium text-gray-700">{dateLabel} — {startLabel} → {endLabel} — {durMin} min</h3>
-                                <ul className="grid sm:grid-cols-2 gap-2">
-                                  {sorted.map((s) => (
-                                    <li key={s.id}>
-                                      <label className="flex items-center gap-2 border rounded-md p-2 cursor-pointer">
-                                        <input
-                                          type="radio"
-                                          name="slot"
-                                          value={s.id}
-                                          checked={slotId === s.id}
-                                          onChange={(e) => setSlotId(e.target.value)}
-                                        />
-                                        <span>
-                                          {new Date(s.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                          {" - "}
-                                          {new Date(s.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                          {(() => {
-                                            const cap = caps[s.id];
-                                            const cnt = bookedCounts[s.id] ?? 0;
-                                            return cap ? ` — restants: ${Math.max(0, cap - cnt)}` : '';
-                                          })()}
-                                        </span>
-                                      </label>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    );
-                  })()}
                 </div>
               );
             })()
